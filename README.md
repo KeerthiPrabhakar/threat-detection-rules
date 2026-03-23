@@ -1,4 +1,6 @@
-# Threat Detection Rule Set — Splunk & Microsoft Sentinel
+#**Detection-as-Code Mini Framework**
+
+Threat Detection Rule Set — Splunk & Microsoft Sentinel
 
 A production-quality detection engineering project covering Windows and macOS use cases across two SIEM platforms. Every rule is accompanied by documented reasoning, false positive guidance, and synthetic test data.
 

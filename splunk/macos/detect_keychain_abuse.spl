@@ -1,0 +1,17 @@
+# Rule: macOS Keychain Abuse via security CLI
+# MITRE:    T1555, T1555.001
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 15 minutes
+# Data src: EDR process telemetry for macOS (sourcetype=edr:process:macos)
+
+index=edr sourcetype=edr:process:macos action=process_start
+| eval proc_lc=lower(process_name), cmd_lc=lower(process_command_line), parent_lc=lower(parent_process_name)
+| where proc_lc="security"
+| where match(cmd_lc, "(dump-keychain|find-generic-password|find-internet-password|unlock-keychain)")
+| eval suspicious_parent=if(match(parent_lc, "(osascript|bash|sh|zsh|python|python3)$"), "true", "false")
+| eval risk_score=case(match(cmd_lc, "dump-keychain"), 95, suspicious_parent="true", 85, 1=1, 75)
+| eval mitre_technique="T1555,T1555.001"
+| eval rule_name="detect_macos_keychain_abuse"
+| eval triage_note="Confirm the user intent for security CLI access to Keychain items. Correlate with archive creation and outbound connections."
+| table _time, host, user, process_name, process_command_line, parent_process_name, process_path, risk_score, mitre_technique, rule_name, triage_note

@@ -1,0 +1,17 @@
+# Rule: macOS TCC Tampering or Unexpected Sensitive Permission Changes
+# MITRE:    T1548, T1562.001
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 10 minutes, look back 20 minutes
+# Data src: macOS file/process telemetry (sourcetype=edr:file:macos, edr:process:macos)
+
+(index=edr sourcetype=edr:file:macos action IN (file_modify,file_create) file_path IN ("*/com.apple.TCC/TCC.db","*/com.apple.TCC/TCC.db-*"))
+OR (index=edr sourcetype=edr:process:macos action=process_start process_name IN ("sqlite3","tccutil"))
+| eval file_lc=lower(coalesce(file_path, process_command_line)), proc_lc=lower(process_name)
+| eval sensitive_target=if(match(file_lc, "(screenrecording|microphone|camera|systempolicyalldisks|accessibility|documents|downloads)"), "true", "false")
+| eval suspicious_process=if(proc_lc IN ("sqlite3","tccutil") OR match(lower(process_command_line), "com\.apple\.tcc/tcc\.db"), "true", "false")
+| eval risk_score=case(sensitive_target="true" AND suspicious_process="true", 95, suspicious_process="true", 85, 1=1, 75)
+| eval mitre_technique="T1548,T1562.001"
+| eval rule_name="detect_macos_tcc_tampering"
+| eval triage_note="Investigate direct TCC database access or unexpected grants to privacy-sensitive services such as Full Disk Access or Screen Recording."
+| table _time, host, user, action, process_name, process_command_line, file_path, risk_score, mitre_technique, rule_name, triage_note

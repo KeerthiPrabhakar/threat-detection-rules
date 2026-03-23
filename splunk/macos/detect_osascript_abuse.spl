@@ -1,0 +1,17 @@
+# Rule: Suspicious AppleScript or osascript Execution
+# MITRE:    T1059.002, T1059.004, T1204
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 10 minutes
+# Data src: EDR process telemetry for macOS (sourcetype=edr:process:macos)
+
+index=edr sourcetype=edr:process:macos action=process_start process_name="osascript"
+| eval cmd_lc=lower(process_command_line), parent_lc=lower(parent_process_name)
+| eval suspicious_content=if(match(cmd_lc, "(do shell script|curl |bash |zsh |sh |python|base64|-e )"), "true", "false")
+| eval suspicious_parent=if(match(parent_lc, "(microsoft word|microsoft excel|safari|google chrome|slack|teams|discord)$"), "true", "false")
+| where suspicious_content="true" OR suspicious_parent="true"
+| eval risk_score=case(suspicious_content="true" AND suspicious_parent="true", 95, suspicious_content="true", 85, 1=1, 70)
+| eval mitre_technique="T1059.002,T1059.004,T1204"
+| eval rule_name="detect_macos_osascript_abuse"
+| eval triage_note="Inspect the AppleScript payload for shell execution, credential prompts, or downloader behavior."
+| table _time, host, user, process_name, process_command_line, parent_process_name, process_path, risk_score, mitre_technique, rule_name, triage_note

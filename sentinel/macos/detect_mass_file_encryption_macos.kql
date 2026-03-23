@@ -1,0 +1,21 @@
+// Rule: Mass File Rename or Encryption Activity on macOS
+// MITRE:    T1486
+// Severity: Critical
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 5 minutes | Run frequency: Every 2 minutes
+// Data src: DeviceFileEvents (macOS)
+
+DeviceFileEvents
+| where TimeGenerated > ago(5m)
+| where OSPlatform == "macOS"
+| where ActionType in ("FileCreated", "FileRenamed", "FileDeleted")
+| where FolderPath startswith "/Users/" or FolderPath startswith "/Volumes/"
+| extend FileExtension = tostring(split(FileName, ".")[-1])
+| summarize FileOpCount=count(), UniqueFiles=dcount(FileName), UniqueExtensions=dcount(FileExtension), ExtensionsSeen=make_set(FileExtension, 10)
+    by DeviceName, InitiatingProcessAccountName, InitiatingProcessFileName, bin(TimeGenerated, 2m)
+| where FileOpCount >= 100 and UniqueExtensions <= 2
+| extend RiskScore = iff(FileOpCount >= 300, 100, 95),
+         MitreTechnique = "T1486",
+         RuleName = "detect_macos_mass_file_encryption",
+         TriageNote = "High-volume file changes with low extension diversity are consistent with ransomware; isolate the host and inspect mounted volumes."
+| project TimeGenerated, DeviceName, InitiatingProcessAccountName, InitiatingProcessFileName, FileOpCount, UniqueFiles, UniqueExtensions, ExtensionsSeen, RiskScore, MitreTechnique, RuleName, TriageNote

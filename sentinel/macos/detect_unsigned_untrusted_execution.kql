@@ -1,0 +1,21 @@
+// Rule: Unsigned or Untrusted macOS Binary Execution
+// MITRE:    T1204.002, T1553.002, T1036
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 15 minutes | Run frequency: Every 5 minutes
+// Data src: DeviceProcessEvents (macOS MDE telemetry)
+
+let writable_paths = dynamic(["/Users/", "/private/tmp/", "/tmp/"]);
+DeviceProcessEvents
+| where TimeGenerated > ago(15m)
+| where OSPlatform == "macOS"
+| extend FolderLower = tolower(FolderPath), CmdLower = tolower(ProcessCommandLine), ParentLower = tolower(InitiatingProcessFileName)
+| where FolderLower has_any (writable_paths)
+| extend Untrusted = iff(ProcessVersionInfoSignatureStatus !in~ ("SignedValid", "Valid"), true, false)
+| extend SuspiciousParent = ParentLower in~ ("osascript", "terminal", "zsh", "bash", "sh", "python", "python3")
+| where Untrusted or SuspiciousParent or ProcessCommandLine has "com.apple.quarantine"
+| extend RiskScore = case(Untrusted and SuspiciousParent, 95, Untrusted, 85, 1==1, 70),
+         MitreTechnique = "T1204.002,T1553.002,T1036",
+         RuleName = "detect_unsigned_untrusted_macos_execution",
+         TriageNote = "Validate signer, Team ID, and whether the binary was launched from Downloads or tmp by a suspicious parent process."
+| project TimeGenerated, DeviceName, AccountName, FileName, FolderPath, ProcessCommandLine, InitiatingProcessFileName, ProcessVersionInfoSignatureStatus, RiskScore, MitreTechnique, RuleName, TriageNote

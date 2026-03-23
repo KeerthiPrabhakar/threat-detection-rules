@@ -1,0 +1,20 @@
+# Rule: Large Outbound Transfer From a macOS Endpoint
+# MITRE:    T1041, T1567, T1020
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 30 minutes, look back 1 hour
+# Data src: Firewall/proxy logs plus endpoint process-network correlation
+
+index=network sourcetype=firewall direction=outbound action=allowed os="macos"
+| eval mb_sent=round(bytes_out/1048576,2)
+| bucket _time span=1h
+| stats sum(mb_sent) as total_mb, count as connection_count, values(dest_port) as ports_used, values(app) as apps by _time, src_ip, dest_ip, host
+| where total_mb >= 500
+| lookup threat_intel.csv ip AS dest_ip OUTPUT reputation, category
+| where NOT reputation="known_good"
+| eval risk_score=case(reputation="malicious",95, reputation="suspicious",80, isnull(reputation),65)
+| eval mitre_technique="T1041,T1567,T1020"
+| eval rule_name="detect_macos_large_outbound_transfer"
+| eval triage_note="Validate whether the destination and transfer volume are expected for this macOS host. Correlate with archive creation or curl/rclone activity."
+| table _time, host, src_ip, dest_ip, reputation, category, total_mb, connection_count, ports_used, apps, risk_score, mitre_technique, rule_name, triage_note
+| sort -total_mb

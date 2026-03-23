@@ -1,0 +1,33 @@
+# Rule: Unsigned or Untrusted macOS Binary Execution
+# MITRE:    T1204.002, T1553.002, T1036
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 15 minutes
+# Data src: EDR process telemetry for macOS (sourcetype=edr:process:macos)
+#
+# Required fields:
+#   host, user, process_name, process_path, parent_process_name, process_command_line,
+#   signature_status, team_id, quarantine_flag
+#
+# Tuning notes:
+#   - Developer-built local binaries can be unsigned; whitelist approved build hosts/users
+#   - Prioritise binaries launched from Downloads, tmp, or user Library paths
+#   - Ad hoc signatures should be treated as suspicious outside approved engineering workflows
+
+index=edr sourcetype=edr:process:macos action=process_start
+| eval path_lc=lower(process_path), parent_lc=lower(parent_process_name), sig_lc=lower(signature_status)
+| eval in_user_writable=if(
+    like(path_lc, "/users/%/downloads/%")
+    OR like(path_lc, "/users/%/library/%")
+    OR like(path_lc, "/private/tmp/%")
+    OR like(path_lc, "/tmp/%"),
+    "true", "false"
+  )
+| eval suspicious_parent=if(match(parent_lc, "(osascript|terminal|zsh|bash|sh|python|python3)$"), "true", "false")
+| eval weak_trust=if(sig_lc IN ("unsigned", "adhoc", "untrusted", "invalid"), "true", "false")
+| where in_user_writable="true" AND (weak_trust="true" OR quarantine_flag="true" OR suspicious_parent="true")
+| eval risk_score=case(weak_trust="true" AND quarantine_flag="true", 95, weak_trust="true", 85, 1=1, 70)
+| eval mitre_technique="T1204.002,T1553.002,T1036"
+| eval rule_name="detect_unsigned_untrusted_macos_execution"
+| eval triage_note="Validate signer, Team ID, quarantine origin, and parent process chain. Prioritise launches from Downloads or tmp by unsigned binaries."
+| table _time, host, user, process_name, process_path, parent_process_name, process_command_line, signature_status, team_id, quarantine_flag, risk_score, mitre_technique, rule_name, triage_note

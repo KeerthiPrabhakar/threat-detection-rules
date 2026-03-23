@@ -1,0 +1,20 @@
+// Rule: Suspicious AppleScript or osascript Execution
+// MITRE:    T1059.002, T1059.004, T1204
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 10 minutes | Run frequency: Every 5 minutes
+// Data src: DeviceProcessEvents (macOS)
+
+DeviceProcessEvents
+| where TimeGenerated > ago(10m)
+| where OSPlatform == "macOS"
+| where FileName =~ "osascript"
+| extend CmdLower = tolower(ProcessCommandLine), ParentLower = tolower(InitiatingProcessFileName)
+| extend SuspiciousContent = CmdLower has_any ("do shell script", "curl ", "bash ", "zsh ", "python", "base64")
+| extend SuspiciousParent = ParentLower in~ ("microsoft word", "microsoft excel", "safari", "google chrome", "slack", "teams", "discord")
+| where SuspiciousContent or SuspiciousParent
+| extend RiskScore = case(SuspiciousContent and SuspiciousParent, 95, SuspiciousContent, 85, 70),
+         MitreTechnique = "T1059.002,T1059.004,T1204",
+         RuleName = "detect_macos_osascript_abuse",
+         TriageNote = "Inspect the AppleScript payload for shell execution, download activity, or fake credential prompts."
+| project TimeGenerated, DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessFileName, RiskScore, MitreTechnique, RuleName, TriageNote

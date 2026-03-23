@@ -1,0 +1,18 @@
+// Rule: macOS Security Tool Tampering
+// MITRE:    T1562.001
+// Severity: Critical
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 15 minutes | Run frequency: Every 5 minutes
+// Data src: DeviceProcessEvents (macOS)
+
+DeviceProcessEvents
+| where TimeGenerated > ago(15m)
+| where OSPlatform == "macOS"
+| extend CmdLower = tolower(ProcessCommandLine)
+| where CmdLower has_any ("launchctl bootout", "launchctl unload", "killall ", "pkill ", "kill ")
+| where CmdLower has_any ("crowdstrike", "falcon", "sentinelone", "microsoft defender", "wdav", "jamf", "kandji", "carbonblack", "osquery")
+| extend RiskScore = 95,
+         MitreTechnique = "T1562.001",
+         RuleName = "detect_macos_security_tool_tampering",
+         TriageNote = "Validate whether this process attempted to disable or unload a security control outside approved maintenance."
+| project TimeGenerated, DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessFileName, RiskScore, MitreTechnique, RuleName, TriageNote

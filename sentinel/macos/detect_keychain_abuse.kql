@@ -1,0 +1,18 @@
+// Rule: macOS Keychain Abuse via security CLI
+// MITRE:    T1555, T1555.001
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 15 minutes | Run frequency: Every 5 minutes
+// Data src: DeviceProcessEvents (macOS)
+
+DeviceProcessEvents
+| where TimeGenerated > ago(15m)
+| where OSPlatform == "macOS"
+| where FileName =~ "security"
+| where ProcessCommandLine has_any ("dump-keychain", "find-generic-password", "find-internet-password", "unlock-keychain")
+| extend ParentLower = tolower(InitiatingProcessFileName)
+| extend RiskScore = case(ProcessCommandLine has "dump-keychain", 95, ParentLower in~ ("osascript", "bash", "zsh", "python", "python3"), 85, 75),
+         MitreTechnique = "T1555,T1555.001",
+         RuleName = "detect_macos_keychain_abuse",
+         TriageNote = "Confirm why the security CLI accessed Keychain material and correlate with archive creation or network egress."
+| project TimeGenerated, DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessFileName, RiskScore, MitreTechnique, RuleName, TriageNote

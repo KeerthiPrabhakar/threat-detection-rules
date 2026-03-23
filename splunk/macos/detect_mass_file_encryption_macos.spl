@@ -1,0 +1,21 @@
+# Rule: Mass File Rename or Encryption Activity on macOS
+# MITRE:    T1486
+# Severity: Critical
+# Platform: Splunk SPL
+# Schedule: Run every 2 minutes, look back 5 minutes
+# Data src: EDR file telemetry for macOS (sourcetype=edr:file:macos)
+
+index=edr sourcetype=edr:file:macos action IN (file_create,file_rename,file_delete)
+| eval path_lc=lower(file_path), ext=mvindex(split(path_lc, "."), -1)
+| where like(path_lc, "/users/%/desktop/%")
+    OR like(path_lc, "/users/%/documents/%")
+    OR like(path_lc, "/users/%/downloads/%")
+    OR like(path_lc, "/volumes/%")
+| bucket _time span=2m
+| stats count as file_ops, dc(file_path) as unique_files, dc(ext) as unique_exts, values(ext) as extensions by _time, host, user, process_name, process_path
+| where file_ops >= 100 AND unique_exts <= 2
+| eval risk_score=if(file_ops >= 300, 100, 95)
+| eval mitre_technique="T1486"
+| eval rule_name="detect_macos_mass_file_encryption"
+| eval triage_note="High-volume file changes with low extension diversity are consistent with ransomware. Isolate the endpoint and inspect mounted volumes."
+| table _time, host, user, process_name, process_path, file_ops, unique_files, unique_exts, extensions, risk_score, mitre_technique, rule_name, triage_note

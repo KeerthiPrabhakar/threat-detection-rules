@@ -1,0 +1,28 @@
+# Rule: Suspicious LaunchAgent or LaunchDaemon Persistence
+# MITRE:    T1543.001, T1543.004
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 10 minutes, look back 20 minutes
+# Data src: macOS file + process telemetry (sourcetype=edr:file:macos, edr:process:macos)
+#
+# Required fields:
+#   host, user, file_path, action, process_name, process_path, file_contents, plist_program,
+#   plist_program_arguments, plist_run_at_load, plist_keep_alive
+
+index=edr sourcetype=edr:file:macos action IN (file_create,file_modify)
+| eval file_lc=lower(file_path), creator_lc=lower(process_name), prog_lc=lower(coalesce(plist_program, mvjoin(plist_program_arguments, " ")))
+| where like(file_lc, "/library/launchdaemons/%")
+    OR like(file_lc, "/library/launchagents/%")
+    OR like(file_lc, "/users/%/library/launchagents/%")
+| eval user_writable_target=if(
+    like(prog_lc, "/users/%") OR like(prog_lc, "/private/tmp/%") OR like(prog_lc, "/tmp/%"),
+    "true", "false"
+  )
+| eval suspicious_creator=if(match(creator_lc, "(osascript|bash|sh|zsh|python|python3|curl|wget)$"), "true", "false")
+| eval persistence_flags=mvappend(if(plist_run_at_load="true","RunAtLoad",null()), if(plist_keep_alive="true","KeepAlive",null()))
+| where user_writable_target="true" OR suspicious_creator="true" OR mvcount(persistence_flags) > 0
+| eval risk_score=case(user_writable_target="true" AND suspicious_creator="true", 95, user_writable_target="true", 85, 1=1, 70)
+| eval mitre_technique="T1543.001,T1543.004"
+| eval rule_name="detect_macos_launchd_persistence"
+| eval triage_note="Review the plist target path and whether launchd is being used to start a user-writable or script-backed payload."
+| table _time, host, user, file_path, action, process_name, process_path, plist_program, plist_program_arguments, plist_run_at_load, plist_keep_alive, risk_score, mitre_technique, rule_name, triage_note

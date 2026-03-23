@@ -1,0 +1,20 @@
+// Rule: Suspicious LaunchAgent or LaunchDaemon Persistence
+// MITRE:    T1543.001, T1543.004
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 20 minutes | Run frequency: Every 10 minutes
+// Data src: DeviceFileEvents + DeviceProcessEvents (macOS)
+
+DeviceFileEvents
+| where TimeGenerated > ago(20m)
+| where OSPlatform == "macOS"
+| where ActionType in ("FileCreated", "FileModified", "FileRenamed")
+| extend PathLower = tolower(strcat(FolderPath, "/", FileName))
+| where PathLower startswith "/library/launchdaemons/"
+    or PathLower startswith "/library/launchagents/"
+    or PathLower has "/library/launchagents/"
+| extend RiskScore = 85,
+         MitreTechnique = "T1543.001,T1543.004",
+         RuleName = "detect_macos_launchd_persistence",
+         TriageNote = "Review new or modified launchd plists, especially those referencing payloads in user-writable paths."
+| project TimeGenerated, DeviceName, InitiatingProcessAccountName, InitiatingProcessFileName, FolderPath, FileName, ActionType, RiskScore, MitreTechnique, RuleName, TriageNote

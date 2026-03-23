@@ -1,0 +1,29 @@
+// Rule: macOS TCC Tampering or Unexpected Sensitive Permission Changes
+// MITRE:    T1548, T1562.001
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 20 minutes | Run frequency: Every 10 minutes
+// Data src: DeviceFileEvents + DeviceProcessEvents (macOS)
+
+let tcc_paths = dynamic(["/Library/Application Support/com.apple.TCC/TCC.db", "/Users/"]);
+union isfuzzy=true
+(
+    DeviceFileEvents
+    | where TimeGenerated > ago(20m)
+    | where OSPlatform == "macOS"
+    | extend FullPath = strcat(FolderPath, "/", FileName)
+    | where FullPath has "com.apple.TCC/TCC.db"
+    | project TimeGenerated, DeviceName, AccountName=InitiatingProcessAccountName, FileName=InitiatingProcessFileName, Evidence=FullPath, ActionType
+),
+(
+    DeviceProcessEvents
+    | where TimeGenerated > ago(20m)
+    | where OSPlatform == "macOS"
+    | where FileName in~ ("sqlite3", "tccutil") or ProcessCommandLine has "com.apple.TCC/TCC.db"
+    | project TimeGenerated, DeviceName, AccountName, FileName, Evidence=ProcessCommandLine, ActionType="ProcessObserved"
+)
+| extend RiskScore = 90,
+         MitreTechnique = "T1548,T1562.001",
+         RuleName = "detect_macos_tcc_tampering",
+         TriageNote = "Investigate direct TCC database access or unexpected privacy permission manipulation."
+| project TimeGenerated, DeviceName, AccountName, FileName, Evidence, ActionType, RiskScore, MitreTechnique, RuleName, TriageNote

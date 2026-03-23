@@ -1,0 +1,16 @@
+# Rule: macOS Security Tool Tampering
+# MITRE:    T1562.001
+# Severity: Critical
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 15 minutes
+# Data src: EDR process telemetry for macOS (sourcetype=edr:process:macos)
+
+index=edr sourcetype=edr:process:macos action=process_start
+| eval cmd_lc=lower(process_command_line), proc_lc=lower(process_name)
+| where match(cmd_lc, "(launchctl\s+(bootout|unload)|killall |pkill |kill )")
+| where match(cmd_lc, "(crowdstrike|falcon|sentinelone|microsoft defender|wdav|jamf|kandji|carbonblack|osquery)")
+| eval risk_score=95
+| eval mitre_technique="T1562.001"
+| eval rule_name="detect_macos_security_tool_tampering"
+| eval triage_note="Verify whether an approved upgrade or troubleshooting action explains the attempt to stop or unload a security control."
+| table _time, host, user, process_name, process_command_line, parent_process_name, risk_score, mitre_technique, rule_name, triage_note

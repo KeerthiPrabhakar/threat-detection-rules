@@ -1,0 +1,29 @@
+// Rule: Large Outbound Transfer From a macOS Endpoint
+// MITRE:    T1041, T1567, T1020
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 1 hour | Run frequency: Every 30 minutes
+// Data src: CommonSecurityLog + optional DeviceNetworkEvents correlation
+
+let mb_threshold = 500;
+CommonSecurityLog
+| where TimeGenerated > ago(1h)
+| where DeviceAction has_any ("Allow", "allow", "permit")
+| where CommunicationDirection == "Outbound"
+| where DeviceCustomString1 =~ "macOS" or DeviceCustomString4 =~ "macOS"
+| extend MBSent = SentBytes / 1048576
+| summarize TotalMB=round(sum(MBSent),2), ConnectionCount=count(), PortsUsed=make_set(DestinationPort, 10), Protocols=make_set(ApplicationProtocol, 5)
+    by SourceIP, DestinationIP, bin(TimeGenerated, 1h)
+| where TotalMB >= mb_threshold
+| join kind=leftouter (
+    ThreatIntelligenceIndicator
+    | where TimeGenerated > ago(7d)
+    | where isnotempty(NetworkIP)
+    | summarize ThreatConfidence=max(ConfidenceScore), ThreatType=any(ThreatType) by NetworkIP
+) on $left.DestinationIP == $right.NetworkIP
+| extend RiskScore = case(ThreatConfidence >= 80, 95, ThreatConfidence >= 50, 80, isnotempty(ThreatConfidence), 70, 65),
+         MitreTechnique = "T1041,T1567,T1020",
+         RuleName = "detect_macos_large_outbound_transfer",
+         TriageNote = "Validate the destination and volume for this macOS host and correlate with archive creation or curl/rclone usage."
+| project TimeGenerated, SourceIP, DestinationIP, TotalMB, ConnectionCount, PortsUsed, Protocols, ThreatConfidence, ThreatType, RiskScore, MitreTechnique, RuleName, TriageNote
+| order by TotalMB desc

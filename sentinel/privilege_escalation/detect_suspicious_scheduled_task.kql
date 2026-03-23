@@ -1,0 +1,59 @@
+// Rule: Suspicious Scheduled Task Created by Non-Admin
+// MITRE:    T1053.005 — Privilege Escalation / Persistence: Scheduled Task
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 15 minutes | Run frequency: Every 10 minutes
+// Data src: SecurityEvent (Event ID 4698)
+//
+// Tuning notes:
+//   - Correlate with software install events (Event 11707) to filter legitimate installer tasks
+//   - The SYSTEM run-as + standard user combination is the highest-fidelity signal
+//   - Add known software deployment service accounts to excluded_accounts
+
+let excluded_accounts = dynamic([
+    "SYSTEM", "Administrator", "LOCAL SERVICE",
+    "NETWORK SERVICE", "sccm-deploy", "intune-svc"
+]);
+let lolbins = dynamic([
+    "powershell", "cmd", "wscript", "cscript",
+    "mshta", "rundll32", "regsvr32", "certutil",
+    "bitsadmin", "curl", "wget", "wmic"
+]);
+SecurityEvent
+| where EventID == 4698
+| where SubjectUserName !in~ (excluded_accounts)
+| where SubjectUserName !endswith "$"
+| extend TaskXml = tostring(EventData)
+| extend
+    ExecCommand = extract(@"<Command>([^<]+)", 1, TaskXml),
+    RunAsUser   = extract(@"<UserId>([^<]+)", 1, TaskXml),
+    TaskNameVal = extract(@"<TaskName>([^<]+)", 1, TaskXml)
+| extend
+    IsHighPriv = RunAsUser has_any ("SYSTEM", "S-1-5-18"),
+    ContainsLolbin = ExecCommand has_any (lolbins)
+| where IsHighPriv or ContainsLolbin
+| extend
+    RiskScore = case(
+        IsHighPriv and ContainsLolbin, 95,
+        IsHighPriv, 85,
+        ContainsLolbin, 70,
+        60
+    ),
+    MitreTechnique = "T1053.005",
+    RuleName = "detect_suspicious_scheduled_task",
+    TriageNote = strcat(
+        "Review ExecCommand for encoded payloads or LOLBin chains. ",
+        "Verify with ", SubjectUserName, " whether this task creation was intentional."
+    )
+| project
+    TimeGenerated,
+    Computer,
+    SubjectUserName,
+    TaskNameVal,
+    ExecCommand,
+    RunAsUser,
+    IsHighPriv,
+    ContainsLolbin,
+    RiskScore,
+    MitreTechnique,
+    TriageNote

@@ -1,0 +1,37 @@
+# Rule: Unusual WMI Remote Execution
+# MITRE:    T1047 — Execution: Windows Management Instrumentation
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 15 minutes
+# Data src: Windows Security Event Log (Event ID 4688) + Sysmon (Event ID 1)
+#
+# Tuning notes:
+#   - Build a lookup (known_admin_hosts.csv) of authorised management servers
+#   - Tune unique_procs threshold per environment — start at 3, lower as baseline is understood
+#   - Consider adding image hash allowlisting for signed management agents
+
+index=wineventlog EventCode=4688
+| where ParentProcessName LIKE "%wmiprvse.exe%"
+| eval new_proc=lower(NewProcessName)
+| where NOT new_proc IN (
+    "c:\\windows\\system32\\wbem\\wmiprvse.exe",
+    "c:\\windows\\system32\\svchost.exe",
+    "c:\\windows\\system32\\msiexec.exe"
+  )
+| where NOT [
+    | inputlookup known_admin_hosts.csv
+    | fields host
+  ]
+| bucket _time span=10m
+| stats
+    count as exec_count,
+    dc(NewProcessName) as unique_procs,
+    values(NewProcessName) as spawned_processes,
+    values(CommandLine) as command_lines
+    by _time, host, SubjectUserName
+| where unique_procs >= 3 OR exec_count >= 10
+| eval risk_score=if(unique_procs >= 5, 95, 75)
+| eval mitre_technique="T1047"
+| eval rule_name="detect_wmi_remote_execution"
+| eval triage_note="Review spawned_processes for LOLBins or post-exploitation tools. Correlate with network connections from " + host
+| table _time, host, SubjectUserName, exec_count, unique_procs, spawned_processes, command_lines, risk_score, mitre_technique, triage_note

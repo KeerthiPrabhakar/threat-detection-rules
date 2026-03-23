@@ -1,0 +1,49 @@
+// Rule: Mass File Rename / Extension Change — Ransomware Indicator
+// MITRE:    T1486 — Impact: Data Encrypted for Impact
+// Severity: Critical
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 5 minutes | Run frequency: Every 2 minutes
+// Data src: DeviceFileEvents (Microsoft Defender for Endpoint)
+//
+// Tuning notes:
+//   - Threshold of 100 file ops in 2 minutes is conservative — tune down once baseline is established
+//   - Backup agents and migration tools WILL trigger this — whitelist by InitiatingProcessSHA256
+//   - The unique_extensions <= 2 filter catches ransomware's signature (all files → .locked/.enc)
+//   - Consider adding network share path detection: FileName has "\\\\" for network-spread ransomware
+
+let excluded_processes = dynamic(["BackupAgent.exe", "MsMpEng.exe", "robocopy.exe"]);
+DeviceFileEvents
+| where ActionType in ("FileCreated", "FileRenamed", "FileDeleted")
+| where InitiatingProcessFileName !in~ (excluded_processes)
+| extend FileExtension = tostring(split(FileName, ".")[-1])
+| summarize
+    FileOpCount      = count(),
+    UniqueFiles      = dcount(FileName),
+    UniqueExtensions = dcount(FileExtension),
+    ExtensionsSeen   = make_set(FileExtension, 10),
+    FolderPaths      = make_set(FolderPath, 5)
+    by DeviceName, InitiatingProcessFileName, InitiatingProcessAccountName, bin(TimeGenerated, 2m)
+| where FileOpCount >= 100 and UniqueExtensions <= 2
+| extend
+    RiskScore = iff(FileOpCount >= 500, 100, 95),
+    MitreTechnique = "T1486",
+    RuleName = "detect_mass_file_rename_ransomware",
+    TriageNote = strcat(
+        "CRITICAL: ", InitiatingProcessFileName, " on ", DeviceName,
+        " performed ", FileOpCount, " file operations with only ", UniqueExtensions,
+        " unique extensions (", tostring(ExtensionsSeen), "). ",
+        "Isolate device immediately. Check if network shares are also affected."
+    )
+| project
+    TimeGenerated,
+    DeviceName,
+    InitiatingProcessAccountName,
+    InitiatingProcessFileName,
+    FileOpCount,
+    UniqueFiles,
+    UniqueExtensions,
+    ExtensionsSeen,
+    FolderPaths,
+    RiskScore,
+    MitreTechnique,
+    TriageNote

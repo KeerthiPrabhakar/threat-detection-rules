@@ -1,0 +1,39 @@
+# Rule: Unusual Outbound Data Transfer — Exfiltration Indicator
+# MITRE:    T1041 — Exfiltration: Exfiltration Over C2 Channel
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 30 minutes, look back 1 hour
+# Data src: Firewall/network logs (sourcetype=firewall or equivalent)
+#
+# Tuning notes:
+#   - 500MB threshold is appropriate for most corporate environments; adjust for your baseline
+#   - Cloud backup agents (Veeam, Backup Exec, Azure Backup) WILL trigger this — whitelist their src_ip
+#   - Video conferencing (Teams, Zoom, Webex) generates high outbound — whitelist known CDN IPs
+#   - Populate threat_intel.csv with known-good cloud provider IP ranges (AWS, Azure, GCP, CDNs)
+#   - Consider adding time-of-day filter: after-hours transfers (22:00–06:00) warrant lower thresholds
+
+index=network sourcetype=firewall action=allowed direction=outbound
+| eval mb_sent=round(bytes_out / 1048576, 2)
+| where mb_sent > 0
+| bucket _time span=1h
+| stats
+    sum(mb_sent) as total_mb,
+    count as connection_count,
+    dc(dest_port) as unique_ports,
+    values(dest_port) as ports_used,
+    values(app) as applications
+    by _time, src_ip, dest_ip
+| where total_mb >= 500
+| lookup threat_intel.csv ip AS dest_ip OUTPUT reputation, category
+| where NOT reputation="known_good"
+| lookup asset_inventory.csv ip AS src_ip OUTPUT hostname, owner, business_unit
+| eval risk_score=case(
+    reputation="malicious", 95,
+    reputation="suspicious", 80,
+    isnull(reputation), 65
+  )
+| eval mitre_technique="T1041"
+| eval rule_name="detect_unusual_outbound_transfer"
+| eval triage_note="Host " + coalesce(hostname, src_ip) + " sent " + tostring(round(total_mb,1)) + " MB to " + dest_ip + " (" + coalesce(category, "unknown") + "). Verify with " + coalesce(owner, "asset owner") + " whether this transfer was authorised."
+| table _time, src_ip, hostname, owner, dest_ip, reputation, category, total_mb, connection_count, applications, risk_score, mitre_technique, triage_note
+| sort -total_mb

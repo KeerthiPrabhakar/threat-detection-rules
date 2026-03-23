@@ -1,0 +1,32 @@
+# Rule: Kerberoasting — SPN Enumeration Spike
+# MITRE:    T1558.003 — Credential Access: Steal or Forge Kerberos Tickets: Kerberoasting
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 10 minutes, look back 10 minutes
+# Data src: Windows Security Event Log (Event ID 4769) — must be enabled on Domain Controllers
+#
+# Tuning notes:
+#   - Encryption type 0x17 (RC4-HMAC) is the Kerberoasting indicator — modern environments
+#     should prefer AES (0x12/0x11); any RC4 TGS request is suspicious in AES-hardened envs
+#   - SPN count threshold of 5 in 10 minutes is conservative — lower to 3 in hardened environments
+#   - Service accounts with legitimate high-frequency TGS requests should be whitelisted by SPN name
+#   - Enable this log on ALL Domain Controllers, not just primary DC
+
+index=wineventlog EventCode=4769
+| where TicketEncryptionType="0x17"
+| where ServiceName != "krbtgt"
+| where NOT ServiceName LIKE "%$"
+| where ServiceName != host
+| bucket _time span=10m
+| stats
+    dc(ServiceName) as spn_count,
+    values(ServiceName) as requested_spns,
+    values(ServiceTicketOptions) as ticket_options,
+    count as total_requests
+    by _time, IpAddress, Account
+| where spn_count >= 5
+| eval risk_score=if(spn_count >= 10, 90, 75)
+| eval mitre_technique="T1558.003"
+| eval rule_name="detect_kerberoasting"
+| eval triage_note="Account " + Account + " from " + IpAddress + " requested TGS for " + tostring(spn_count) + " SPNs using RC4. Verify if this is an authorised service account audit or penetration test."
+| table _time, IpAddress, Account, spn_count, total_requests, requested_spns, risk_score, mitre_technique, triage_note

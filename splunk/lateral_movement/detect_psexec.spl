@@ -1,0 +1,30 @@
+# Rule: PsExec / Remote Service Creation Detection
+# MITRE:    T1021.002 — Lateral Movement: Remote Services: SMB/Windows Admin Shares
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 10 minutes
+# Data src: Windows System Event Log (Event ID 7045)
+#
+# Tuning notes:
+#   - Whitelist known IT admin hosts in the NOT filter below
+#   - Add your SCCM / Ansible servers to the exclusion list
+#   - In low-noise environments, count >= 1 is appropriate
+#   - In noisy environments, correlate with src_ip lookups first
+
+index=wineventlog EventCode=7045
+| where ServiceName="PSEXESVC"
+    OR ServiceFileName LIKE "%psexec%"
+    OR ServiceFileName LIKE "%PSEXESVC%"
+| where NOT host IN ("known-admin-host-01", "known-admin-host-02")
+| eval risk_score=90
+| eval mitre_technique="T1021.002"
+| eval rule_name="detect_psexec_lateral_movement"
+| eval triage_note="Verify whether " + host + " had an authorised remote admin session at this time. Check change management records."
+| stats
+    count,
+    values(ServiceName) as service_names,
+    values(ServiceFileName) as service_paths,
+    first(user) as initiating_user
+    by _time, host, risk_score, mitre_technique, rule_name, triage_note
+| where count >= 1
+| table _time, host, initiating_user, service_names, service_paths, count, risk_score, mitre_technique, triage_note

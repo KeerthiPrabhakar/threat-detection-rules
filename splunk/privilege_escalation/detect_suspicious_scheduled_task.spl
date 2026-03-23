@@ -1,0 +1,30 @@
+# Rule: Suspicious Scheduled Task Created by Non-Admin
+# MITRE:    T1053.005 — Privilege Escalation / Persistence: Scheduled Task
+# Severity: High
+# Platform: Splunk SPL
+# Schedule: Run every 10 minutes, look back 15 minutes
+# Data src: Windows Security Event Log (Event ID 4698)
+#
+# Tuning notes:
+#   - Software installers legitimately create scheduled tasks — correlate with Event 11707 (install complete)
+#   - Filter tasks created during known maintenance windows using a lookup
+#   - The SYSTEM run-as check is the key high-fidelity filter — a standard user creating a SYSTEM task is near-always malicious
+
+index=wineventlog EventCode=4698
+| spath input=TaskContent path=Task.Actions.Exec.Command output=exec_command
+| spath input=TaskContent path=Task.Principals.Principal.RunLevel output=run_level
+| spath input=TaskContent path=Task.Principals.Principal.UserId output=run_as_user
+| where NOT SubjectUserName IN ("SYSTEM", "Administrator", "LOCAL SERVICE", "NETWORK SERVICE")
+| where NOT SubjectUserName LIKE "%$"
+| eval is_high_priv=if(run_as_user="S-1-5-18" OR run_as_user LIKE "%SYSTEM%", "true", "false")
+| eval risk_score=if(is_high_priv="true", 90, 60)
+| eval contains_suspicious=if(
+    match(exec_command, "(?i)(powershell|cmd|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|curl|wget)"),
+    "true", "false"
+  )
+| eval final_risk=if(contains_suspicious="true", risk_score+10, risk_score)
+| eval mitre_technique="T1053.005"
+| eval rule_name="detect_suspicious_scheduled_task"
+| eval triage_note="Review exec_command for LOLBins or encoded payloads. Verify with the user whether they intentionally created this task."
+| where is_high_priv="true" OR contains_suspicious="true"
+| table _time, host, SubjectUserName, TaskName, exec_command, run_as_user, is_high_priv, contains_suspicious, final_risk, mitre_technique, triage_note

@@ -1,0 +1,48 @@
+// Rule: Kerberoasting — SPN Enumeration Spike
+// MITRE:    T1558.003 — Credential Access: Steal or Forge Kerberos Tickets: Kerberoasting
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 10 minutes | Run frequency: Every 10 minutes
+// Data src: SecurityEvent (Event ID 4769) — must be enabled on Domain Controllers
+//
+// Tuning notes:
+//   - Event 4769 must be enabled via GPO: Computer Config → Audit Policy → Kerberos Service Ticket Ops
+//   - TicketEncryptionType 0x17 = RC4-HMAC (weak, targeted by Kerberoasting tools)
+//   - In AES-enforced environments, ANY 0x17 request is suspicious regardless of SPN count
+//   - Whitelist service accounts with legitimately high TGS activity by SPN name
+
+SecurityEvent
+| where EventID == 4769
+| where TicketEncryptionType == "0x17"
+| where ServiceName != "krbtgt"
+| where ServiceName !endswith "$"
+| where ServiceName != Computer
+| summarize
+    SPNCount       = dcount(ServiceName),
+    RequestedSPNs  = make_set(ServiceName, 50),
+    TotalRequests  = count(),
+    SourceIPs      = make_set(IpAddress, 5)
+    by Account, bin(TimeGenerated, 10m)
+| where SPNCount >= 5
+| extend
+    RiskScore = iff(SPNCount >= 10, 90, 75),
+    MitreTechnique = "T1558.003",
+    RuleName = "detect_kerberoasting",
+    TriageNote = strcat(
+        "Account ", Account, " requested TGS tickets for ", SPNCount,
+        " SPNs using RC4 encryption in 10 minutes. ",
+        "Verify if this is an authorised security assessment. ",
+        "If not, reset passwords for all targeted service accounts immediately."
+    )
+| project
+    TimeGenerated,
+    Account,
+    SourceIPs,
+    SPNCount,
+    TotalRequests,
+    RequestedSPNs,
+    RiskScore,
+    MitreTechnique,
+    RuleName,
+    TriageNote
+| order by SPNCount desc

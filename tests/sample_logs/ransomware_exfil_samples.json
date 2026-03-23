@@ -1,0 +1,101 @@
+[
+  {
+    "_comment": "SHOULD TRIGGER: Ransomware mass file rename — 300 files in 2 minutes, single new extension",
+    "event_type": "Sysmon FileCreate burst (simulated aggregate)",
+    "host": "CORP-WRK-088",
+    "Image": "C:\\Users\\jdoe\\AppData\\Local\\Temp\\system_update.exe",
+    "User": "CORP\\jdoe",
+    "operation_window": "2024-11-14T01:00:00Z to 2024-11-14T01:02:00Z",
+    "file_operations": [
+      { "EventCode": 11, "TargetFilename": "C:\\Users\\jdoe\\Documents\\Q3_Report.docx.locked" },
+      { "EventCode": 23, "TargetFilename": "C:\\Users\\jdoe\\Documents\\Q3_Report.docx" },
+      { "EventCode": 11, "TargetFilename": "C:\\Users\\jdoe\\Documents\\Budget_2024.xlsx.locked" },
+      { "EventCode": 23, "TargetFilename": "C:\\Users\\jdoe\\Documents\\Budget_2024.xlsx" },
+      { "_note": "... 296 more pairs following the same pattern ..." }
+    ],
+    "total_ops": 300,
+    "unique_extensions_created": [".locked"],
+    "unique_ext_count": 1,
+    "expected_result": "ALERT CRITICAL — 300 file ops in 2 min, 1 unique extension (.locked)"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: LockBit-style ransomware with numeric extension",
+    "event_type": "MDE FileRenamed burst (simulated aggregate)",
+    "DeviceName": "CORP-SERVER-FILE01",
+    "InitiatingProcessFileName": "svchosts.exe",
+    "InitiatingProcessAccountName": "CORP\\svc_backup",
+    "operation_window": "2024-11-14T03:15:00Z to 2024-11-14T03:17:00Z",
+    "sample_renames": [
+      { "ActionType": "FileRenamed", "FileName": "invoice_2024.pdf.3729a8f1" },
+      { "ActionType": "FileRenamed", "FileName": "contract_acme.docx.3729a8f1" },
+      { "ActionType": "FileRenamed", "FileName": "payroll_oct.xlsx.3729a8f1" },
+      { "_note": "... 450 more renames with same extension ..." }
+    ],
+    "total_ops": 453,
+    "unique_extensions_created": [".3729a8f1"],
+    "unique_ext_count": 1,
+    "expected_result": "ALERT CRITICAL — 453 file renames in 2 min, custom ransomware extension"
+  },
+  {
+    "_comment": "SHOULD NOT TRIGGER: Veeam backup agent — high volume but known process and multiple extensions",
+    "event_type": "Sysmon FileCreate burst",
+    "host": "CORP-BACKUP-01",
+    "Image": "C:\\Program Files\\Veeam\\Backup and Replication\\Backup\\Veeam.Backup.Service.exe",
+    "User": "NT AUTHORITY\\SYSTEM",
+    "total_ops": 850,
+    "unique_extensions_created": [".vbk", ".vib", ".vrb", ".vbm"],
+    "unique_ext_count": 4,
+    "timestamp": "2024-11-14T22:00:00Z",
+    "expected_result": "NO ALERT — Known backup binary, multiple extensions, SYSTEM account"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: Large outbound transfer to unknown IP — 2.1GB in 1 hour after hours",
+    "event_type": "Firewall log aggregate",
+    "src_ip": "10.0.2.45",
+    "dest_ip": "185.220.101.47",
+    "direction": "outbound",
+    "action": "allowed",
+    "bytes_out": 2254857830,
+    "total_mb": 2150.2,
+    "connection_count": 847,
+    "dest_port": 443,
+    "app": "ssl",
+    "window": "2024-11-14T23:00:00Z to 2024-11-15T00:00:00Z",
+    "threat_intel_reputation": "unknown",
+    "expected_result": "ALERT HIGH — 2.1GB to unknown IP after hours, no reputation data"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: Exfiltration to known C2 IP",
+    "event_type": "Firewall log aggregate",
+    "src_ip": "10.0.1.88",
+    "dest_ip": "91.92.109.174",
+    "direction": "outbound",
+    "action": "allowed",
+    "bytes_out": 629145600,
+    "total_mb": 600.0,
+    "connection_count": 142,
+    "dest_port": 4444,
+    "app": "unknown",
+    "window": "2024-11-14T14:30:00Z to 2024-11-14T15:30:00Z",
+    "threat_intel_reputation": "malicious",
+    "threat_category": "C2-Cobalt-Strike",
+    "expected_result": "ALERT CRITICAL — 600MB to known malicious C2 IP, non-standard port"
+  },
+  {
+    "_comment": "SHOULD NOT TRIGGER: Azure Backup sending daily backup to known Azure IP",
+    "event_type": "Firewall log aggregate",
+    "src_ip": "10.0.0.50",
+    "dest_ip": "52.239.210.196",
+    "direction": "outbound",
+    "action": "allowed",
+    "bytes_out": 1073741824,
+    "total_mb": 1024.0,
+    "connection_count": 312,
+    "dest_port": 443,
+    "app": "ssl",
+    "window": "2024-11-14T01:00:00Z to 2024-11-14T02:00:00Z",
+    "threat_intel_reputation": "known_good",
+    "threat_category": "Azure-Backup",
+    "expected_result": "NO ALERT — Source is whitelisted backup agent, destination is known_good Azure IP"
+  }
+]

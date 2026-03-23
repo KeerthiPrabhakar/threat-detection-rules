@@ -1,0 +1,62 @@
+// Rule: Unusual Outbound Data Transfer — Exfiltration Indicator
+// MITRE:    T1041 — Exfiltration: Exfiltration Over C2 Channel
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 1 hour | Run frequency: Every 30 minutes
+// Data src: CommonSecurityLog (CEF connector — firewall/proxy logs)
+//
+// Tuning notes:
+//   - 500MB threshold suits most corporate environments — adjust based on your traffic baseline
+//   - Whitelist cloud backup agent source IPs and known CDN destination ranges
+//   - A ThreatIntelligenceIndicator watchlist enriches DestinationIP with reputation data
+//   - After-hours transfers (22:00–06:00 local) warrant lower thresholds — add time filter if needed
+
+let mb_threshold = 500;
+let excluded_src = dynamic(["10.0.0.50", "10.0.0.51"]);  // backup agents
+CommonSecurityLog
+| where CommunicationDirection == "Outbound"
+| where DeviceAction has_any ("Allow", "allow", "ALLOW", "permit")
+| where SourceIP !in (excluded_src)
+| extend MBSent = SentBytes / 1048576
+| summarize
+    TotalMB          = round(sum(MBSent), 2),
+    ConnectionCount  = count(),
+    UniquePorts      = dcount(DestinationPort),
+    PortsUsed        = make_set(DestinationPort, 10),
+    Protocols        = make_set(ApplicationProtocol, 5)
+    by SourceIP, DestinationIP, bin(TimeGenerated, 1h)
+| where TotalMB >= mb_threshold
+| join kind=leftouter (
+    ThreatIntelligenceIndicator
+    | where TimeGenerated > ago(7d)
+    | where isnotempty(NetworkIP)
+    | summarize ThreatConfidence = max(ConfidenceScore), ThreatType = any(ThreatType) by NetworkIP
+  ) on $left.DestinationIP == $right.NetworkIP
+| extend
+    RiskScore = case(
+        ThreatConfidence >= 80, 95,
+        ThreatConfidence >= 50, 80,
+        isnotempty(ThreatConfidence), 70,
+        65
+    ),
+    MitreTechnique = "T1041",
+    RuleName = "detect_unusual_outbound_transfer",
+    TriageNote = strcat(
+        SourceIP, " sent ", TotalMB, " MB to ", DestinationIP,
+        iff(isnotempty(ThreatType), strcat(" (Threat type: ", ThreatType, ")"), " (reputation unknown)"),
+        ". Verify whether this transfer was authorised. ",
+        "Check for matching process on the source host via DeviceNetworkEvents."
+    )
+| project
+    TimeGenerated,
+    SourceIP,
+    DestinationIP,
+    TotalMB,
+    ConnectionCount,
+    Protocols,
+    ThreatConfidence,
+    ThreatType,
+    RiskScore,
+    MitreTechnique,
+    TriageNote
+| order by TotalMB desc

@@ -1,0 +1,32 @@
+# Rule: LSASS Memory Access — Credential Dumping (Mimikatz pattern)
+# MITRE:    T1003.001 — Credential Access: OS Credential Dumping: LSASS Memory
+# Severity: Critical
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 10 minutes
+# Data src: Sysmon Event ID 10 (ProcessAccess)
+#
+# Tuning notes:
+#   - Whitelist by SHA256 hash, not process name — attackers rename mimikatz.exe to svchost.exe
+#   - AV/EDR products, WerFault.exe, Task Manager legitimately access LSASS — add their known hashes
+#   - Access rights 0x1010/0x1410 are the key Mimikatz indicators (PROCESS_VM_READ + PROCESS_QUERY_INFO)
+#   - This rule requires Sysmon with ProcessAccess auditing enabled (Sysmon config rule: ProcessAccess, target: lsass.exe)
+
+index=sysmon EventCode=10
+| where TargetImage LIKE "%lsass.exe%"
+| where NOT SourceImage IN (
+    "C:\\Windows\\System32\\MsMpEng.exe",
+    "C:\\Windows\\System32\\WerFault.exe",
+    "C:\\Windows\\System32\\taskmgr.exe",
+    "C:\\Windows\\System32\\csrss.exe",
+    "C:\\Windows\\System32\\wininit.exe",
+    "C:\\Windows\\System32\\lsass.exe"
+  )
+| where GrantedAccess IN (
+    "0x1010", "0x1410", "0x1418", "0x143a",
+    "0x1438", "0x1fffff", "0x1f3fff"
+  )
+| eval risk_score=98
+| eval mitre_technique="T1003.001"
+| eval rule_name="detect_lsass_memory_access"
+| eval triage_note="CRITICAL: Possible credential dumping attempt. Isolate " + host + " immediately if SourceImage is not a known security product. Check for subsequent network connections to C2 infrastructure."
+| table _time, host, SourceUser, SourceImage, SourceProcessId, TargetImage, GrantedAccess, risk_score, mitre_technique, triage_note

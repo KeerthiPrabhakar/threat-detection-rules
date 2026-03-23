@@ -1,0 +1,38 @@
+// Rule: PsExec / Remote Service Creation Detection
+// MITRE:    T1021.002 — Lateral Movement: Remote Services: SMB/Windows Admin Shares
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 10 minutes | Run frequency: Every 5 minutes
+// Data src: SecurityEvent (Windows System Log, Event ID 7045)
+//
+// Tuning notes:
+//   - Add known admin hosts to the exclusion list below
+//   - In environments with SCCM/Ansible, correlate with change management records
+//   - Consider enabling entity mapping: Account → SubjectUserName, Host → Computer
+
+let excluded_hosts = dynamic(["known-admin-host-01", "known-admin-host-02"]);
+SecurityEvent
+| where EventID == 7045
+| where ServiceName == "PSEXESVC"
+    or ServiceFileName has "psexec"
+    or ServiceFileName has "PSEXESVC"
+| where Computer !in (excluded_hosts)
+| extend
+    RiskScore = 90,
+    MitreTechnique = "T1021.002",
+    RuleName = "detect_psexec_lateral_movement",
+    TriageNote = strcat(
+        "Verify whether ", Computer,
+        " had an authorised remote admin session at this time. ",
+        "Check change management records and correlate with Event 4624 (logon) from the same source."
+    )
+| project
+    TimeGenerated,
+    Computer,
+    Account,
+    ServiceName,
+    ServiceFileName,
+    RiskScore,
+    MitreTechnique,
+    RuleName,
+    TriageNote

@@ -1,0 +1,41 @@
+// Rule: SeDebugPrivilege Abuse — Token Impersonation
+// MITRE:    T1134.001 — Privilege Escalation: Access Token Manipulation
+// Severity: Critical
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 10 minutes | Run frequency: Every 5 minutes
+// Data src: SecurityEvent (Event ID 4703)
+//
+// Tuning notes:
+//   - Whitelist by process hash (SHA256) not name — attackers rename binaries
+//   - devenv.exe, windbg.exe, WerFault.exe are known legitimate users of SeDebugPrivilege
+//   - Follow up with a correlated query for Event 10 (LSASS access) within 60s of this alert
+
+let legitimate_debuggers = dynamic([
+    "devenv.exe", "windbg.exe", "vsjitdebugger.exe",
+    "mscorsvw.exe", "clrjit.exe"
+]);
+SecurityEvent
+| where EventID == 4703
+| where PrivilegesAdded has "SeDebugPrivilege"
+| extend ProcessFileName = tostring(split(NewProcessName, "\\")[-1])
+| where ProcessFileName !in~ (legitimate_debuggers)
+| where SubjectUserName !endswith "$"
+| extend
+    RiskScore = 95,
+    MitreTechnique = "T1134.001",
+    RuleName = "detect_sedebug_privilege_abuse",
+    TriageNote = strcat(
+        "CRITICAL: ", NewProcessName, " enabled SeDebugPrivilege on ", Computer, ". ",
+        "Confirm this is a known signed security tool. ",
+        "Immediately check for LSASS access (Event 10) within 60s."
+    )
+| project
+    TimeGenerated,
+    Computer,
+    SubjectUserName,
+    NewProcessName,
+    PrivilegesAdded,
+    RiskScore,
+    MitreTechnique,
+    RuleName,
+    TriageNote

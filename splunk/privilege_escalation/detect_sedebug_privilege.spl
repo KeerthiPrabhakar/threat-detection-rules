@@ -1,0 +1,31 @@
+# Rule: SeDebugPrivilege Abuse — Token Impersonation
+# MITRE:    T1134.001 — Privilege Escalation: Access Token Manipulation: Token Impersonation/Theft
+# Severity: Critical
+# Platform: Splunk SPL
+# Schedule: Run every 5 minutes, look back 10 minutes
+# Data src: Windows Security Event Log (Event ID 4703)
+#
+# Tuning notes:
+#   - Whitelist by binary hash, not just process name (attackers rename binaries)
+#   - devenv.exe, windbg.exe, and some backup agents legitimately need SeDebugPrivilege
+#   - Machine accounts (ending in $) are expected to use this privilege in some configurations
+
+index=wineventlog EventCode=4703
+| where PrivilegesAdded LIKE "%SeDebugPrivilege%"
+| where NOT (
+    ProcessName LIKE "%devenv.exe%"
+    OR ProcessName LIKE "%windbg.exe%"
+    OR ProcessName LIKE "%vsjitdebugger.exe%"
+    OR ProcessName LIKE "%mscorsvw.exe%"
+  )
+| where NOT SubjectUserName LIKE "%$"
+| eval risk_score=95
+| eval mitre_technique="T1134.001"
+| eval rule_name="detect_sedebug_privilege_abuse"
+| eval triage_note="Immediate investigation required. Confirm whether " + ProcessName + " is a known, signed security tool. Check for LSASS access within 60 seconds of this event."
+| stats
+    count,
+    values(ProcessName) as processes,
+    values(PrivilegesAdded) as privileges
+    by _time, host, SubjectUserName, risk_score, mitre_technique, rule_name, triage_note
+| table _time, host, SubjectUserName, processes, privileges, count, risk_score, mitre_technique, triage_note

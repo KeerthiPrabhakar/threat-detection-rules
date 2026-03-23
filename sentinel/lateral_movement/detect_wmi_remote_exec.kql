@@ -1,0 +1,49 @@
+// Rule: Unusual WMI Remote Execution
+// MITRE:    T1047 — Execution: Windows Management Instrumentation
+// Severity: High
+// Platform: Microsoft Sentinel (KQL)
+// Query period: Last 15 minutes | Run frequency: Every 5 minutes
+// Data src: SecurityEvent (Event ID 4688) — requires Process Creation auditing
+//
+// Tuning notes:
+//   - Add management platform service accounts to the excluded_accounts list
+//   - Tune unique_proc_count threshold per environment (start at 3)
+//   - Consider joining with DeviceNetworkEvents to correlate with inbound SMB connections
+
+let excluded_accounts = dynamic(["sccm-agent", "intune-svc", "monitoring-agent"]);
+let excluded_parents = dynamic([
+    "C:\\Windows\\System32\\wbem\\wmiprvse.exe",
+    "C:\\Windows\\System32\\svchost.exe"
+]);
+SecurityEvent
+| where EventID == 4688
+| where ParentProcessName has "wmiprvse.exe"
+| where NewProcessName !in (excluded_parents)
+| where SubjectUserName !in (excluded_accounts)
+| where SubjectUserName !endswith "$"
+| summarize
+    ExecCount = count(),
+    UniqueProcCount = dcount(NewProcessName),
+    SpawnedProcesses = make_set(NewProcessName, 20),
+    CommandLines = make_set(CommandLine, 10)
+    by Computer, SubjectUserName, ParentProcessName, bin(TimeGenerated, 10m)
+| where UniqueProcCount >= 3 or ExecCount >= 10
+| extend
+    RiskScore = iff(UniqueProcCount >= 5, 95, 75),
+    MitreTechnique = "T1047",
+    RuleName = "detect_wmi_remote_execution",
+    TriageNote = strcat(
+        "Review SpawnedProcesses for LOLBins (certutil, mshta, rundll32). ",
+        "Correlate with inbound network connections to ", Computer, " on port 135/445."
+    )
+| project
+    TimeGenerated,
+    Computer,
+    SubjectUserName,
+    ExecCount,
+    UniqueProcCount,
+    SpawnedProcesses,
+    CommandLines,
+    RiskScore,
+    MitreTechnique,
+    TriageNote

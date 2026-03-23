@@ -1,0 +1,35 @@
+# Rule: Mass File Rename / Extension Change — Ransomware Indicator
+# MITRE:    T1486 — Impact: Data Encrypted for Impact
+# Severity: Critical
+# Platform: Splunk SPL
+# Schedule: Run every 2 minutes, look back 5 minutes
+# Data src: Sysmon Event IDs 11 (FileCreate) and 23 (FileDelete)
+#
+# Tuning notes:
+#   - Threshold of 100 file ops in 2 minutes is deliberately high to avoid FPs from AV scans
+#   - Lower to 50 once baseline is established for your environment
+#   - Backup software and file migration tools WILL trigger this — whitelist by process hash
+#   - The unique_exts <= 2 filter catches the ransomware pattern (all files → .locked/.enc/.xyz)
+#   - Consider adding a file path filter to exclude known backup staging directories
+
+index=sysmon (EventCode=11 OR EventCode=23)
+| eval op_type=if(EventCode=11, "create", "delete")
+| bucket _time span=2m
+| stats
+    count as total_ops,
+    dc(TargetFilename) as unique_files,
+    values(op_type) as operation_types
+    by _time, host, Image, User
+| where total_ops >= 100
+| join type=inner host [
+    search index=sysmon EventCode=11
+    | rex field=TargetFilename "\.(?<file_ext>[^.\\]+)$"
+    | bucket _time span=2m
+    | stats dc(file_ext) as unique_exts, values(file_ext) as extensions by _time, host, Image
+    | where unique_exts <= 2
+  ]
+| eval risk_score=if(total_ops >= 500, 100, 95)
+| eval mitre_technique="T1486"
+| eval rule_name="detect_mass_file_rename_ransomware"
+| eval triage_note="CRITICAL: " + Image + " on " + host + " performed " + tostring(total_ops) + " file operations in 2 minutes with only " + tostring(unique_exts) + " unique extensions. Isolate host immediately and check for network shares being encrypted."
+| table _time, host, User, Image, total_ops, unique_files, extensions, unique_exts, risk_score, mitre_technique, triage_note

@@ -1,0 +1,71 @@
+[
+  {
+    "_comment": "SHOULD TRIGGER: PsExec service installation on target host",
+    "EventCode": 7045,
+    "host": "CORP-SERVER-04",
+    "user": "CORP\\jsmith",
+    "ServiceName": "PSEXESVC",
+    "ServiceFileName": "C:\\Windows\\PSEXESVC.exe",
+    "ServiceType": "user mode service",
+    "StartType": "demand start",
+    "timestamp": "2024-11-14T02:13:45Z",
+    "expected_result": "ALERT — PsExec service detected outside business hours"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: Renamed PsExec binary (attacker evasion attempt)",
+    "EventCode": 7045,
+    "host": "CORP-DC-01",
+    "user": "CORP\\helpdesk01",
+    "ServiceName": "WindowsHelperSvc",
+    "ServiceFileName": "C:\\Windows\\Temp\\svchost_update.exe",
+    "ServiceType": "user mode service",
+    "StartType": "demand start",
+    "timestamp": "2024-11-14T03:22:10Z",
+    "expected_result": "ALERT — Suspicious service from Temp directory (secondary rule)"
+  },
+  {
+    "_comment": "SHOULD NOT TRIGGER: Legitimate SCCM service installation",
+    "EventCode": 7045,
+    "host": "CORP-WRK-118",
+    "user": "NT AUTHORITY\\SYSTEM",
+    "ServiceName": "CcmExec",
+    "ServiceFileName": "C:\\Windows\\CCM\\CcmExec.exe",
+    "ServiceType": "share process",
+    "StartType": "auto start",
+    "timestamp": "2024-11-14T08:05:00Z",
+    "expected_result": "NO ALERT — Known SCCM service, SYSTEM account"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: WMI remote execution spike — multiple unique processes",
+    "EventCode": 4688,
+    "host": "CORP-SERVER-08",
+    "SubjectUserName": "CORP\\contractor_temp",
+    "ParentProcessName": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+    "NewProcessName": "C:\\Windows\\System32\\cmd.exe",
+    "CommandLine": "cmd.exe /c whoami",
+    "timestamp": "2024-11-14T14:01:00Z",
+    "expected_result": "Part of spike — count if 3+ unique processes in window"
+  },
+  {
+    "_comment": "SHOULD TRIGGER: WMI spawning PowerShell with encoded command",
+    "EventCode": 4688,
+    "host": "CORP-SERVER-08",
+    "SubjectUserName": "CORP\\contractor_temp",
+    "ParentProcessName": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+    "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "CommandLine": "powershell.exe -EncodedCommand cwBhAG0AcABsAGUAIABwAGEAeQBsAG8AYQBkAA==",
+    "timestamp": "2024-11-14T14:01:15Z",
+    "expected_result": "ALERT — WMI spawning encoded PowerShell"
+  },
+  {
+    "_comment": "SHOULD NOT TRIGGER: SCCM legitimate WMI process spawn",
+    "EventCode": 4688,
+    "host": "CORP-WRK-042",
+    "SubjectUserName": "NT AUTHORITY\\SYSTEM",
+    "ParentProcessName": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+    "NewProcessName": "C:\\Windows\\CCM\\CcmExec.exe",
+    "CommandLine": "CcmExec.exe",
+    "timestamp": "2024-11-14T09:00:00Z",
+    "expected_result": "NO ALERT — Known admin host, SYSTEM account, consistent process"
+  }
+]
